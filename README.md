@@ -1,113 +1,156 @@
-# flask-app
-To create a Jenkins pipeline for deploying a simple Python and Flask application hosted on GitHub to an EC2 instance on AWS, follow the steps below. This pipeline will clone the repository, set up a virtual environment, install dependencies, run tests, and deploy the application to the EC2 instance.
+# Prerequisites
+## 1. Jenkins Setup:
 
-Prerequisites:
-1. Jenkins Configuration: Ensure Jenkins is set up with the necessary plugins (e.g., Git, Pipeline, SSH Agent, AWS CLI).
-2. AWS Configuration: Ensure you have an EC2 instance running with SSH access configured.
-3. Credentials: Ensure Jenkins has the necessary credentials for accessing GitHub and the EC2 instance.
+* Ensure Jenkins is installed and running on your server.
+* Install the necessary Jenkins plugins: Git, Docker Pipeline, AWS Credentials, and SSH Agent.
 
-## Jenkinsfile
+## 2. AWS Setup:
 
+* Ensure you have an EC2 instance running.
+* Set up SSH access to the EC2 instance.
+* Install Docker and Docker Compose on the EC2 instance.
+
+## 3. GitHub Repository:
+
+* Your repository should have the following files:
+	* `Dockerfile`
+	* `docker-compose.yaml`
+	* Flask application files (e.g., `app.py`, `requirements.txt`)
+
+# Step-by-Step Guide
+## 1. Create Jenkins Pipeline Job
+### 1. Open Jenkins Dashboard:
+
+* Go to Jenkins dashboard and click on “New Item”.
+* Enter the name of your job and select “Pipeline” as the job type. Click “OK”.
+
+### 2. Configure Pipeline Job:
+
+* In the job configuration page, scroll down to the “Pipeline” section.
+
+### 3. Pipeline Definition:
+
+* Set the Definition to “Pipeline script from SCM”.
+* Select “Git” as the SCM and enter the repository URL.
+* Provide credentials if the repository is private.
+* Set the branch to the desired branch (e.g., `main`).
+
+### 4. Pipeline Script:
+
+* Create a `Jenkinsfile` in the root of your GitHub repository with the following content:
+
+```t
 pipeline {
     agent any
-
+    
     environment {
-        VIRTUAL_ENV = '.venv'
-        FLASK_APP = 'app.py'
-        EC2_USER = 'ec2-user' // Change to your EC2 username
-        EC2_HOST = 'your-ec2-instance-public-ip' // Change to your EC2 public IP
-        SSH_CREDENTIALS_ID = 'your-ssh-credentials-id' // Jenkins SSH credentials ID
+        // AWS Credentials and Region
+        AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
+        AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+        AWS_REGION = 'us-east-1'
+        
+        // SSH Credentials ID
+        SSH_CREDENTIALS_ID = 'ec2-ssh'
+        
+        // EC2 Instance details
+        EC2_USER = 'ec2-user'
+        EC2_IP = 'your-ec2-instance-ip'
     }
-
+    
     stages {
         stage('Clone Repository') {
             steps {
-                // Clone the GitHub repository
-                git 'https://github.com/mvahdatkhah/flask-app.git'
+                git url: 'https://github.com/your-username/your-repo.git', branch: 'main'
             }
         }
-
-        stage('Setup Python Environment') {
+        
+        stage('Build Docker Image') {
             steps {
-                // Setup Python virtual environment
-                sh 'python3 -m venv ${VIRTUAL_ENV}'
-                sh '. ${VIRTUAL_ENV}/bin/activate'
+                script {
+                    sh 'docker build -t flask-app .'
+                }
             }
         }
-
-        stage('Install Dependencies') {
+        
+        stage('Test Application') {
             steps {
-                // Activate virtual environment and install dependencies
-                sh '. ${VIRTUAL_ENV}/bin/activate && pip install -r requirements.txt'
+                script {
+                    // Assuming you have tests defined, e.g., pytest
+                    sh 'pytest'
+                }
             }
         }
-
-        stage('Run Tests') {
-            steps {
-                // Run your test suite
-                sh '. ${VIRTUAL_ENV}/bin/activate && pytest'
-            }
-        }
-
+        
         stage('Deploy to EC2') {
             steps {
-                // Copy application files to the EC2 instance
-                sshagent(credentials: [SSH_CREDENTIALS_ID]) {
-                    sh '''
-                    scp -o StrictHostKeyChecking=no -r * ${EC2_USER}@${EC2_HOST}:~/flask-app/
-                    '''
-                }
-                // Connect to EC2 instance and run deployment script
-                sshagent(credentials: [SSH_CREDENTIALS_ID]) {
-                    sh '''
-                    ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << EOF
-                    cd ~/flask-app
-                    python3 -m venv ${VIRTUAL_ENV}
-                    . ${VIRTUAL_ENV}/bin/activate
-                    pip install -r requirements.txt
-                    nohup flask run --host=0.0.0.0 > flask.log 2>&1 &
-                    EOF
-                    '''
+                script {
+                    // Copy docker-compose.yaml and other necessary files to EC2
+                    sshagent(['SSH_CREDENTIALS_ID']) {
+                        sh """
+                        scp docker-compose.yaml ${EC2_USER}@${EC2_IP}:/home/${EC2_USER}/
+                        """
+                    }
+                    
+                    // Connect to EC2 and run docker-compose
+                    sshagent(['SSH_CREDENTIALS_ID']) {
+                        sh """
+                        ssh ${EC2_USER}@${EC2_IP} 'docker-compose -f /home/${EC2_USER}/docker-compose.yaml up -d'
+                        """
+                    }
                 }
             }
-        }
-    }
-
-    post {
-        always {
-            // Clean up virtual environment
-            sh 'rm -rf ${VIRTUAL_ENV}'
-        }
-
-        success {
-            echo 'Pipeline completed successfully.'
-        }
-
-        failure {
-            echo 'Pipeline failed.'
         }
     }
 }
+```
 
-# Explanation:
-1. Clone Repository: This stage clones your GitHub repository to the Jenkins workspace.
-2. Setup Python Environment: This stage sets up a Python virtual environment.
-3. Install Dependencies: This stage activates the virtual environment and installs the required Python packages from requirements.txt.
-4. Run Tests: This stage runs the test suite using pytest.
-5. Deploy to EC2: This stage performs the following steps:
-	Copies the application files to the EC2 instance using scp.
-	Connects to the EC2 instance and runs a deployment script to set up the virtual environment, install dependencies, and start the Flask application.
+## 2. Configure Jenkins Credentials
+* AWS Credentials:
 
-## Important Notes:
-. Replace `https://github.com/yourusername/flask-app.git` with your actual GitHub repository URL.
-. Replace `your-ec2-instance-public-ip` with your EC2 instance's public IP address.
-. Replace `your-ssh-credentials-id` with the ID of your SSH credentials stored in Jenkins.
-. Ensure your EC2 instance's security group allows incoming traffic on the port your Flask app will use (default is 5000).
+	* Go to Jenkins dashboard.
+	* Manage Jenkins > Manage Credentials > (select the correct store) > Add Credentials.
+	* Add your AWS Access Key ID and Secret Access Key.
 
-# Additional Tips:
-. Make sure Jenkins has access to Python and pip.
-. If you're using any specific Jenkins plugins for Python, make sure they are installed and properly configured.
-. Secure sensitive data like credentials using Jenkins credentials management rather than hardcoding them in the script.
-. Consider using a process manager like gunicorn or supervisord for running your Flask application in a production environment.
+* SSH Credentials:
 
-By following this script, you should be able to set up a CI/CD pipeline for deploying your Python and Flask application to an EC2 instance using Jenkins.
+	* Add your SSH private key used to access the EC2 instance in Jenkins credentials.
+
+
+## 3. Set Up Docker and Docker Compose on EC2
+* Ensure Docker and Docker Compose are installed and running on your EC2 instance. You can use the following commands:	
+
+```t
+# Install Docker
+sudo yum update -y
+sudo amazon-linux-extras install docker
+sudo service docker start
+sudo usermod -a -G docker ec2-user
+
+# Install Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+```
+
+## 4. Set Up docker-compose.yaml
+* Ensure your docker-compose.yaml file includes Redis and Flask app configuration.
+`docker-compose.yaml`:
+
+```t
+version: '3'
+services:
+  web:
+    image: flask-app
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_HOST=redis
+
+  redis:
+    image: "redis:alpine"
+```
+
+## 5. Run the Pipeline
+* Save the Jenkins job configuration and trigger the build.
+* Monitor the console output for any errors and ensure the steps complete successfully.
+
