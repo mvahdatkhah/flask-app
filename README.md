@@ -136,18 +136,32 @@ sudo chmod +x /usr/local/bin/docker-compose
 `docker-compose.yaml`:
 
 ```t
-version: '3'
 services:
-  web:
-    image: flask-app
+  web-fe:
     build: .
+    deploy:
+      replicas: 1
+    command: python app.py
     ports:
-      - "5000:5000"
-    environment:
-      - REDIS_HOST=redis
-
+      - target: 8080
+        published: 5001
+    networks:
+      - counter-net
+    volumes:
+      - type: volume
+        source: counter-vol
+        target: /app
   redis:
-    image: "redis:alpine"
+    image: redis:alpine
+    deploy:
+      replicas: 1
+    networks:
+      counter-net:
+
+networks:
+  counter-net:
+volumes:
+  counter-vol:
 ```
 
 ## 5. Run the Pipeline
