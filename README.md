@@ -138,7 +138,6 @@ sudo chmod +x /usr/local/bin/docker-compose
 ```t
 services:
   web-fe:
-    build: .
     deploy:
       replicas: 1
     command: python app.py
