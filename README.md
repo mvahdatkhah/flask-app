@@ -138,6 +138,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 ```t
 services:
   web-fe:
+    image: flask-app
     deploy:
       replicas: 1
     command: python app.py
